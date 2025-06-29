@@ -5,7 +5,9 @@ import com.kitsune.kitsune.dto.request.UserCreationRequest;
 import com.kitsune.kitsune.dto.request.UserUpdateRequest;
 import com.kitsune.kitsune.entity.User;
 import com.kitsune.kitsune.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -14,30 +16,41 @@ import java.util.Optional;
 
 @Service
 public class UserService {
-    private final UserRepository userRepository;
-    private final JwtService jwt;
-    public UserService(UserRepository userRepository, JwtService jwt){
-        this.userRepository = userRepository;
-        this.jwt = jwt;
-    }
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private JwtService jwt;
+    @Autowired
+    private PasswordService passwordService;
 
-    public User createUser(UserCreationRequest request){
-      User user = new User();
-      user.setUsername(request.getUsername());
-      user.setFirstName(request.getFirstName());
-      user.setLastName(request.getLastName());
-      user.setPassword(request.getPassword());
-      user.setDob(request.getDob());
-      System.out.println(user.toString());
-      userRepository.save(user);
-      return user;
+    public ResponseEntity<String> createUser(UserCreationRequest request){
+        if (isUsernameTaken(request.getUsername())){
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"Account was existed"); //status 409
+        }
+      try{
+          User user = new User();
+          user.setUsername(request.getUsername());
+          user.setFirstName(request.getFirstName());
+          user.setLastName(request.getLastName());
+          user.setPassword(passwordService.encoderPassword(request.getPassword()));
+          user.setDob(request.getDob());
+          System.out.println(user.toString());
+          userRepository.save(user);
+          return ResponseEntity.ok("Create account successfully");
+      }catch (Exception ex){
+          throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,"Unknown Error"); //status 500
+      }
     };
 
-    public List<User> getAllUser(){
+    public boolean isUsernameTaken(String username){
+        return userRepository.existsByUsername(username);
+    };
+
+    public List<User> getUsers(){
         return userRepository.findAll();
     }
 
-    public Optional<User> getUserById(String id){
+    public Optional<User> getUsers(String id){
         return userRepository.findById(id);
     }
 
@@ -59,29 +72,32 @@ public class UserService {
         });
     }
 
-    public void deleteUser(String id){
-        Optional<User> user = userRepository.findById(id);
-        if (user.isPresent()){
-            userRepository.deleteById(id);
-        }else {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+    public ResponseEntity<Void> deleteUser(String id){
+        if (!userRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
         }
+        userRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 
     public String userAuth(UserAuthenticationRequest request) {
         Optional<User> user = userRepository.findByUsername(request.getUsername());
         if (user.isPresent()) {
             User foundUser = user.get();
-            if (!foundUser.getPassword().equals(request.getPassword())) {
-                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid passwords");
+            if (!passwordService.checkPassword(foundUser.getPassword(), request.getPassword())) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"Password incorrect");
             }
             return jwt.getAuthJwt(user);
         } else {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Account not found");
         }
     }
 
     public String verifyAuth(String token){
-        return jwt.verifyAuthJwt(token);
+        try{
+            return jwt.verifyAuthJwt(token);
+        }catch(Exception ex){
+            throw ex;
+        }
     }
 }
