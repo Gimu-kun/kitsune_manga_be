@@ -1,5 +1,6 @@
 package com.kitsune.kitsune.service;
 
+import com.kitsune.kitsune.dto.request.UserAuthenticationRequest;
 import com.kitsune.kitsune.dto.request.UserCreationRequest;
 import com.kitsune.kitsune.dto.request.UserUpdateRequest;
 import com.kitsune.kitsune.entity.User;
@@ -14,9 +15,10 @@ import java.util.Optional;
 @Service
 public class UserService {
     private final UserRepository userRepository;
-
-    public UserService(UserRepository userRepository){
+    private final JwtService jwt;
+    public UserService(UserRepository userRepository, JwtService jwt){
         this.userRepository = userRepository;
+        this.jwt = jwt;
     }
 
     public User createUser(UserCreationRequest request){
@@ -64,5 +66,22 @@ public class UserService {
         }else {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
         }
+    }
+
+    public String userAuth(UserAuthenticationRequest request) {
+        Optional<User> user = userRepository.findByUsername(request.getUsername());
+        if (user.isPresent()) {
+            User foundUser = user.get();
+            if (!foundUser.getPassword().equals(request.getPassword())) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid passwords");
+            }
+            return jwt.getAuthJwt(user);
+        } else {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+        }
+    }
+
+    public String verifyAuth(String token){
+        return jwt.verifyAuthJwt(token);
     }
 }
